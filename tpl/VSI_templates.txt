@@ -1,0 +1,194 @@
+#if ${Service Type}=='L2/L3 VPN'
+#append to DLE8_AGR02_VSI.cfg
+vsi ${VSI ID} static
+ pwsignal ldp
+  vsi-id ${VSI ID}
+  peer $IP_loopback upe 
+  
+#append to DLE65_AGR02_VSI.cfg
+vsi ${VSI ID} static
+ pwsignal ldp
+  vsi-id ${VSI ID}
+  peer $IP_loopback upe 
+#append to ${NEW device name}_VSI.cfg
+
+vsi ${VSI ID} static
+ description ${bridge domain}
+ pwsignal ldp
+  vsi-id ${VSI ID}
+  peer 10.13.8.1
+  peer 10.13.8.2
+  protect-group ${VSI ID}
+   protect-mode pw-redundancy master
+   reroute delay 60
+   peer 10.13.8.1 preference 1
+   peer 10.13.8.2 preference 2
+  traffic-statistics enable
+ mtu 1546
+ #if ${MAC limit}=='TRUE'
+ mac-limit action discard maximum ${MAC limit maximum} rate 0
+ #endif
+ encapsulation ethernet
+ ignore-ac-state
+ loop-detect eth-loop precise-block enable
+ loop-detect eth-loop loop-times 3 detect-cycle 3 cycles 2 retry-times 3 block-time 70
+ igmp-snooping enable
+ igmp-snooping proxy querier-disable
+ igmp-snooping report-suppress
+ suppression inbound enable
+ suppression outbound enable
+
+ #endif
+#if ${Service Type}=='BB(FTTB+ADSL)' or 'IPTV unicast'
+#append to DLE8_AGR02_VSI.cfg
+
+vsi ${VSI ID} static
+ pwsignal ldp
+  vsi-id ${VSI ID}
+  peer $IP_loopback upe
+ #if ${MAC aging time}!=0
+  mac-address aging-time ${MAC aging time} 
+ #endif
+ 
+#append to DLE65_AGR02_VSI.cfg
+ 
+vsi ${VSI ID} static
+ pwsignal ldp
+  vsi-id ${VSI ID}
+  peer $IP_loopback upe
+ #if ${MAC aging time}!=0
+  mac-address aging-time ${MAC aging time} 
+ #endif
+ 
+#append to ${NEW device name}_VSI.cfg
+vsi ${VSI ID} static
+ description ${bridge domain}
+ pwsignal ldp
+  vsi-id ${VSI ID}
+  peer 10.13.8.1
+  peer 10.13.8.2
+  protect-group ${VSI ID}
+   protect-mode pw-redundancy master
+   reroute delay 60
+   peer 10.13.8.1 preference 1
+   peer 10.13.8.2 preference 2
+  traffic-statistics enable
+ mtu 1546
+ encapsulation ethernet
+ ignore-ac-state
+ isolate spoken
+ loop-detect eth-loop precise-block enable
+ loop-detect eth-loop loop-times 3 detect-cycle 3 cycles 2 retry-times 3 block-time 70
+ igmp-snooping enable
+ igmp-snooping proxy querier-disable
+ suppression inbound enable
+ suppression outbound enable
+ #if ${MAC aging time}!=0
+  mac-address aging-time ${MAC aging time} 
+ #endif
+#endif
+
+#if ${Service Type}=='IPTV multicast'
+#append to DLE8_AGR02_VSI.cfg
+
+explicit-path ${Explicit-path_from_DLE8}
+ next hop ${Nexthop_from_DLE8}
+#
+interface Tunnel0/0/${DLE8_tunnel ID}
+ ip address unnumbered interface LoopBack1
+ tunnel-protocol mpls te
+ destination ${DLE8_destination}
+ mpls te tunnel-id ${DLE8_tunnel_ID}
+ mpls te record-route label
+ mpls te path explicit-path ${Explicit-path_from_DLE8}
+ mpls te reserved-for-binding
+ mpls te commit
+# 
+tunnel-policy ${Tnl-policy_from_DLE8}
+ tunnel binding destination ${DLE8_destination} te Tunnel0/0/${DLE8_tunnel_ID}
+#
+vsi 546 static
+ pwsignal ldp
+  vsi-id 546
+  peer $IP_loopback tnl-policy ${Tnl-policy_from_DLE8}
+
+#append to DLE65_AGR02_VSI.cfg
+explicit-path ${Explicit-path_from_DLE65}
+ next hop ${Nexthop_from_DLE65}
+#
+interface Tunnel0/0/${DLE65_tunnel_ID}
+ ip address unnumbered interface LoopBack1
+ tunnel-protocol mpls te
+ destination ${DLE65_destination}
+ mpls te tunnel-id ${DLE65_tunnel_ID}
+ mpls te record-route label
+ mpls te path explicit-path ${Explicit-path_from_DLE65}
+ mpls te reserved-for-binding
+ mpls te commit
+# 
+tunnel-policy ${Tnl-policy_from_DLE65}
+ tunnel binding destination ${DLE65_destination} te Tunnel0/0/${DLE65_tunnel_ID}
+#
+vsi 546 static
+ pwsignal ldp
+  vsi-id 546
+  peer $IP_loopback tnl-policy ${Tnl-policy_from_DLE65}  
+#append to ${NEW device name}_VSI.cfg
+explicit-path ${Explicit-path_to_DLE8}
+ next hop ${Nexthop_to_DLE8}
+#
+explicit-path ${Explicit-path_to_DLE65}
+ next hop ${Nexthop_to_DLE65}
+ 
+interface Tunnel0/0/1
+ ip address unnumbered interface LoopBack1
+ tunnel-protocol mpls te
+ destination 10.13.8.1
+ mpls te tunnel-id 1
+ mpls te record-route label
+ mpls te path explicit-path ${Explicit-path_to_DLE8}
+ mpls te reserved-for-binding
+ mpls te commit
+#
+interface Tunnel0/0/2
+ ip address unnumbered interface LoopBack1
+ tunnel-protocol mpls te
+ destination 10.13.8.2
+ mpls te tunnel-id 2
+ mpls te record-route label
+ mpls te path explicit-path ${Explicit-path_to_DLE65}
+ mpls te reserved-for-binding
+ mpls te commit
+#
+tunnel-policy ${Tnl-policy_to_DLE8}
+ tunnel binding destination 10.13.8.1 te Tunnel0/0/1
+tunnel-policy ${Tnl-policy_to_DLE65}
+ tunnel binding destination 10.13.8.2 te Tunnel0/0/2
+
+ vsi 546 static
+ description 546_IPTVmulticast
+ pwsignal ldp
+  vsi-id 546
+  peer 10.13.8.1 tnl-policy ${Tnl-policy_to_DLE8}
+  peer 10.13.8.2 tnl-policy ${Tnl-policy_to_DLE65}
+  protect-group 546
+   protect-mode pw-redundancy master
+   reroute delay 60
+   peer 10.13.8.1 preference 1
+   peer 10.13.8.2 preference 2
+  traffic-statistics enable
+ mtu 1546
+ isolate spoken
+ encapsulation ethernet
+ ignore-ac-state
+ loop-detect eth-loop loop-times 3 detect-cycle 3 cycles 2 retry-times 3 block-time 70
+ loop-detect eth-loop precise-block enable
+ igmp-snooping enable
+ igmp-snooping proxy querier-disable
+ igmp-snooping report-suppress
+ undo igmp-snooping router-learning
+ igmp-snooping static-router-port remote-peer 10.13.8.1
+ igmp-snooping static-router-port remote-peer 10.13.8.2
+ suppression inbound enable
+ suppression outbound enable
+#endif

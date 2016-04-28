@@ -1,0 +1,7 @@
+xls/
+output/
+*.xls
+*.xlsx
+*.cfg
+*.bak
+*.log
