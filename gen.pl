@@ -5,6 +5,8 @@ use Data::Dumper;
 use Eldhelm::Util::CommandLine;
 use Eldhelm::Util::FileSystem;
 
+my %args;
+
 sub nfo($) {
 	my ($str) = @_;
 	print "$str\n";
@@ -68,10 +70,8 @@ sub readExcell($) {
 		}
 	}
 
-	my %vars      = {};
-	my %varsInv   = {};
-	my %lists     = {};
-	my %values    = {};
+	my %varsInv;
+	my @rows;
 	my $totalRows = 0;
 	for my $worksheet ($workbook->worksheets()) {
 		my ($row_min, $row_max) = $worksheet->row_range();
@@ -81,34 +81,25 @@ sub readExcell($) {
 			my $cell = $worksheet->get_cell($row_min, $col);
 			my $value = trim($cell->unformatted());
 			$varsInv{$col} = $value;
-			$vars{$value}  = $col;
 		}
 
 		for my $row ($row_min + 1 .. $row_max) {
+			my %rowData;
 			for my $col ($col_min .. $col_max) {
 				my $cell = $worksheet->get_cell($row, $col);
 				next unless $cell;
 
 				my $value = trim($cell->unformatted());
-
-				$lists{ $varsInv{$col} } ||= [];
-				$lists{ $varsInv{$col} }[ $row - 1 ] = $value;
-
-				$values{ $varsInv{$col} } ||= {};
-				$values{ $varsInv{$col} }{$value} = $row;
+				$rowData{ $varsInv{$col} } = $value;
 			}
 			$totalRows++;
+			push @rows, \%rowData;
 		}
 	}
 
 	nfo "Found $totalRows rows";
 
-	return {
-		vars    => \%vars,
-		varsInv => \%varsInv,
-		lists   => \%lists,
-		values  => \%values,
-	};
+	return { rows => \@rows };
 }
 
 sub readAllExcells($$) {
@@ -121,18 +112,25 @@ sub readAllExcells($$) {
 	return \%result;
 }
 
+sub parseCondition {
+	my ($str) = @_;
+	$str =~ s/==/ eq /g;
+	return "if($str){";
+}
+
 sub readTemplate($) {
 	my ($path) = @_;
 	my $txt = Eldhelm::Util::FileSystem->getFileContents($path);
 
 	$txt =~ s/^[\t\s]*([^\s\t#].*)/"_writeToFile(qq~$1~);"/gme;
 	$txt =~ s/^[\t\s]*#append to (.*)/"_setOutputFile(qq~$1~);"/gme;
-	$txt =~ s/^[\t\s]*#if[\s\t]+(.*)/"if($1){"/igme;
+	$txt =~ s/^[\t\s]*#if[\s\t]+(.*)/parseCondition($1)/igme;
 	$txt =~ s/^[\t\s]*#endif/\}/igm;
-	$txt =~ s/\$\w/"\$_parsedData->{'$1'}"/ge;
+	$txt =~ s/^[\t\s]*(#.*)/"_writeToFile(qq~$1~);"/gme;
+	$txt =~ s/\$(\w+)/"\$_parsedData->{'$1'}"/ge;
 	$txt =~ s/\$\{([^\{\}]+)\}/"\$_parsedData->{'$1'}"/ge;
-	$txt .= "_setOutputFile();";
-	$txt .= "1;";
+	$txt .= "\n_setOutputFile();";
+	$txt .= "\n1;";
 
 	return $txt;
 }
@@ -147,7 +145,7 @@ sub readAllTemplates($) {
 }
 
 sub readConfig() {
-	return do 'config.pl';
+	return do 'config.pl' or nag "Config error: $@";
 }
 
 my $_currentFH;
@@ -158,6 +156,7 @@ sub _setOutputFile {
 	my ($file) = @_;
 	if ($_currentFH) {
 		nfo "OK";
+		_writeToFile('#===================================================================') if $args{s};
 		close $_currentFH;
 	}
 	return unless $file;
@@ -170,6 +169,10 @@ sub _setOutputFile {
 
 sub _writeToFile {
 	my ($content) = @_;
+	unless ($_currentFH) {
+		nag 'Can not write content';
+		exit;
+	}
 	print $_currentFH "$content\n";
 }
 
@@ -180,6 +183,7 @@ sub processTeplate {
 		$tpl =~ s/^/$i++; " $i. "/gme;
 		nag $tpl;
 		nag $@;
+		exit;
 	};
 }
 
@@ -190,12 +194,14 @@ my $cmd = Eldhelm::Util::CommandLine->new(
 		[ 'h help',    'help' ],
 		[ 'c check',   'check dependencies' ],
 		[ 'p process', 'folder to process' ],
-		[ 'o output',  'output folder; defaults to output' ]
+		[ 'o output',  'output folder; defaults to output' ],
+		[ 'd debug',   'prints compiled template' ],
+		[ 's sep',     'appends a separator before file close' ]
 	],
 	examples => [ "perl $0 -p xls", "perl $0 xls" ]
 );
 
-my %args = $cmd->arguments;
+%args = $cmd->arguments;
 
 if ($args{h} || $args{help} || !keys %args) {
 	print $cmd->usage;
@@ -222,19 +228,73 @@ unless (-d $_outputFolder) {
 nfo 'Reading files ...';
 my $config    = readConfig;
 my $templates = readAllTemplates $config->{template};
-my $excell    = readAllExcells $folder, $config->{excell};
+if ($args{d} || $args{debug}) {
+	nfo $_ foreach @$templates;
+	exit;
+}
+
+my $excell = readAllExcells $folder, $config->{excell};
 
 nfo 'Processing ...';
 my $tpl = $templates->[0];
 
-foreach my $port (@{ $excell->{old}{lists}{'Port description'} }) {
-	next unless $port;
-	next unless $excell->{main}{values}{'Port Description'}{$port};
-
-	nag $port;
-
-	processTeplate($tpl, {
-		'NEW device name' => $port
-	});
+my %newServices;
+foreach my $row (@{ $excell->{main}{rows} }) {
+	my $dn = $row->{'OLD device name'};
+	next unless $dn;
+	my $k = $dn.'-'.$row->{'OLD device port'};
+	$newServices{$k} = $row;
 }
 
+my %vlans;
+foreach my $row (@{ $excell->{vlan}{rows} }) {
+	$vlans{ $row->{'VSI ID'} } = $row;
+}
+
+my %ips;
+foreach my $row (@{ $excell->{ips}{rows} }) {
+	$ips{ $row->{NE_NAME} } = $row;
+}
+
+my %rsvp;
+foreach my $row (@{ $excell->{rsvp}{rows} }) {
+	$rsvp{ $row->{ACR} } = $row;
+}
+
+my @errors;
+my %uniqueServices;
+foreach my $row (@{ $excell->{old}{rows} }) {
+	next unless keys %$row;
+	my $k      = $row->{devicename}.'-'.$row->{portname};
+	my $newRow = $newServices{$k};
+	my $nk     = $newRow->{'NEW device name'}.'-'.$row->{VLAN};
+
+	$k = $row->{VLAN};
+	my $vlanRows = $vlans{$k};
+	unless ($vlanRows) {
+		push @errors, "Vlan $k not found!";
+		next;
+	}
+
+	$k = $newRow->{'NEW device name'};
+	my $ipRows = $ips{$k};
+	unless ($ipRows) {
+		push @errors, "New device $k not found in IP plan!";
+		next;
+	}
+
+	my $rsvpRows = $rsvp{$k};
+	unless ($rsvpRows) {
+		push @errors, "New device $k not found in RSVP!";
+		next;
+	}
+
+	$uniqueServices{$nk} = { %$row, %$newRow, %$vlanRows, %$ipRows, %$rsvpRows };
+}
+
+foreach (sort { $a cmp $b } keys %uniqueServices) {
+	my $service = $uniqueServices{$_};
+	processTeplate($tpl, $service);
+}
+
+nag $_ foreach @errors;

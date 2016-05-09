@@ -39,7 +39,7 @@ vsi ${VSI ID} static
  suppression outbound enable
 
  #endif
-#if ${Service Type}=='BB(FTTB+ADSL)' or 'IPTV unicast'
+#if ${Service Type}=='BB(FTTB+ADSL)' || ${Service Type}=='IPTV unicast'
 #append to DLE8_AGR02_VSI.cfg
 
 vsi ${VSI ID} static
@@ -94,7 +94,7 @@ vsi ${VSI ID} static
 explicit-path ${Explicit-path_from_DLE8}
  next hop ${Nexthop_from_DLE8}
 #
-interface Tunnel0/0/${DLE8_tunnel ID}
+interface Tunnel0/0/${DLE8_tunnel_ID}
  ip address unnumbered interface LoopBack1
  tunnel-protocol mpls te
  destination ${DLE8_destination}
