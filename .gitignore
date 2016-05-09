@@ -1,3 +1,4 @@
+perl/
 xls/
 output/
 *.xls
@@ -5,3 +6,4 @@ output/
 *.cfg
 *.bak
 *.log
+*.zip
