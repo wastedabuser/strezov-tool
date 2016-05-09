@@ -156,7 +156,8 @@ sub _setOutputFile {
 	my ($file) = @_;
 	if ($_currentFH) {
 		nfo "OK";
-		_writeToFile('#===================================================================') if $args{s};
+		_writeToFile('#===================================================================')
+			if $args{s} || $args{separator};
 		close $_currentFH;
 	}
 	return unless $file;
@@ -191,12 +192,12 @@ my $cmd = Eldhelm::Util::CommandLine->new(
 	argv    => \@ARGV,
 	items   => ['folder to process'],
 	options => [
-		[ 'h help',    'help' ],
-		[ 'c check',   'check dependencies' ],
-		[ 'p process', 'folder to process' ],
-		[ 'o output',  'output folder; defaults to output' ],
-		[ 'd debug',   'prints compiled template' ],
-		[ 's sep',     'appends a separator before file close' ]
+		[ 'h help',      'help' ],
+		[ 'c check',     'check dependencies' ],
+		[ 'p process',   'folder to process' ],
+		[ 'o output',    'output folder; defaults to output' ],
+		[ 'd debug',     'prints compiled template' ],
+		[ 's separator', 'appends a separator before file close' ]
 	],
 	examples => [ "perl $0 -p xls", "perl $0 xls" ]
 );
