@@ -249,6 +249,7 @@ foreach my $row (@{ $excell->{main}{rows} }) {
 
 my %vlans;
 foreach my $row (@{ $excell->{vlan}{rows} }) {
+	next if $row->{'QoS marking'} eq 'not migrate';
 	$vlans{ $row->{'VSI ID'} } = $row;
 }
 
