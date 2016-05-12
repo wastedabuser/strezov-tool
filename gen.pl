@@ -114,8 +114,9 @@ sub readAllExcells($$) {
 
 sub parseCondition {
 	my ($str) = @_;
-	$str =~ s/==/ eq /g;
-	return "if($str){";
+	$str =~ s/\s*==\s*/ eq /g;
+	$str =~ s/\s*!=\s*/ ne /g;
+	return "if ($str) {";
 }
 
 sub readTemplate($) {
@@ -249,8 +250,7 @@ foreach my $row (@{ $excell->{main}{rows} }) {
 
 my %vlans;
 foreach my $row (@{ $excell->{vlan}{rows} }) {
-	next if $row->{'QoS marking'} eq 'not migrate';
-	$vlans{ $row->{'VSI ID'} } = $row;
+	$vlans{ $row->{'VLAN ID'} } = $row;
 }
 
 my %ips;
@@ -272,22 +272,26 @@ foreach my $row (@{ $excell->{old}{rows} }) {
 	my $nk     = $newRow->{'NEW device name'}.'-'.$row->{VLAN};
 
 	$k = $row->{VLAN};
+	unless ($k) {
+		push @errors, "Vlan is blank for $row->{devicename} $row->{portname}!";
+		next;
+	}
 	my $vlanRows = $vlans{$k};
 	unless ($vlanRows) {
-		push @errors, "Vlan $k not found!";
+		push @errors, "Vlan $k not found for $row->{devicename} $row->{portname}!";
 		next;
 	}
 
 	$k = $newRow->{'NEW device name'};
 	my $ipRows = $ips{$k};
 	unless ($ipRows) {
-		push @errors, "New device $k not found in IP plan!";
+		push @errors, "New device $k not found in IP plan for $row->{devicename} $row->{portname}!";
 		next;
 	}
 
 	my $rsvpRows = $rsvp{$k};
 	unless ($rsvpRows) {
-		push @errors, "New device $k not found in RSVP!";
+		push @errors, "New device $k not found in RSVP for $row->{devicename} $row->{portname}!";
 		next;
 	}
 
@@ -295,8 +299,12 @@ foreach my $row (@{ $excell->{old}{rows} }) {
 }
 
 foreach (sort { $a cmp $b } keys %uniqueServices) {
-	my $service = $uniqueServices{$_};
-	processTeplate($tpl, $service);
+	my $row = $uniqueServices{$_};
+	if ($row->{'QoS marking'} eq 'not migrate') {
+		nfo "QoS marking = not migrate, skipping $row->{devicename} $row->{portname}";
+		next;
+	}
+	processTeplate($tpl, $row);
 }
 
 nag $_ foreach @errors;
