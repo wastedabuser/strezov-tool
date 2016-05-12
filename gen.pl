@@ -12,9 +12,16 @@ sub nfo($) {
 	print "$str\n";
 }
 
+my $ERROR;
 sub nag($) {
 	my ($str) = @_;
-	warn $str;
+	$ERROR = 1;
+	print "$str\n";
+}
+
+sub done {
+	die 'Finished with errors!' if $ERROR;
+	exit;
 }
 
 sub checkDeps() {
@@ -102,12 +109,12 @@ sub readExcell($) {
 	return { rows => \@rows };
 }
 
-sub readAllExcells($$) {
-	my ($path, $all) = @_;
+sub readAllExcells($) {
+	my ($all) = @_;
 	my %result;
 	foreach my $alias (keys %$all) {
 		my $file = $all->{$alias};
-		$result{$alias} = readExcell "$path/$file";
+		$result{$alias} = readExcell $file;
 	}
 	return \%result;
 }
@@ -157,7 +164,7 @@ sub _setOutputFile {
 	my ($file) = @_;
 	if ($_currentFH) {
 		nfo "OK";
-		_writeToFile('#===================================================================')
+		_writeToFile('#'.('=' x 50))
 			if $args{s} || $args{separator};
 		close $_currentFH;
 	}
@@ -184,21 +191,30 @@ sub processTeplate {
 		my $i = 0;
 		$tpl =~ s/^/$i++; " $i. "/gme;
 		nag $tpl;
+		nag '*' x 50;
 		nag $@;
-		exit;
+		my @lines = split /[\n\r]+/, $tpl;
+		my @lnums = $@ =~ /line (\d+)/g;
+		nag '*' x 50;
+		foreach (@lnums) {
+			nag $lines[ $_ - 1 ];
+		}
+		done;
 	};
 }
 
-my $cmd = Eldhelm::Util::CommandLine->new(
+my @excellNames = qw(old main vlan ips rsvp);
+my $cmd         = Eldhelm::Util::CommandLine->new(
 	argv    => \@ARGV,
 	items   => ['folder to process'],
 	options => [
 		[ 'h help',      'help' ],
 		[ 'c check',     'check dependencies' ],
-		[ 'p process',   'folder to process' ],
 		[ 'o output',    'output folder; defaults to output' ],
 		[ 'd debug',     'prints compiled template' ],
-		[ 's separator', 'appends a separator before file close' ]
+		[ 's separator', 'appends a separator before file close' ],
+		[ 'p process',   'folder to process' ],
+		[ join(' ', @excellNames), 'load a file from a specific location' ],
 	],
 	examples => [ "perl $0 -p xls", "perl $0 xls" ]
 );
@@ -227,15 +243,24 @@ unless (-d $_outputFolder) {
 	exit;
 }
 
+nfo 'Setting up ...';
+my $config = readConfig;
+foreach my $e (@excellNames) {
+	if ($args{$e}) {
+		$config->{excell}{$e} = $args{$e};
+		next;
+	}
+
+	$config->{excell}{$e} = $folder.'/'.$config->{excell}{$e};
+}
+
 nfo 'Reading files ...';
-my $config    = readConfig;
 my $templates = readAllTemplates $config->{template};
 if ($args{d} || $args{debug}) {
 	nfo $_ foreach @$templates;
 	exit;
 }
-
-my $excell = readAllExcells $folder, $config->{excell};
+my $excell = readAllExcells $config->{excell};
 
 nfo 'Processing ...';
 my $tpl = $templates->[0];
@@ -308,3 +333,4 @@ foreach (sort { $a cmp $b } keys %uniqueServices) {
 }
 
 nag $_ foreach @errors;
+done;
