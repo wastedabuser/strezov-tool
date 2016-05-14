@@ -270,7 +270,7 @@ foreach my $e (@excellNames) {
 nfo 'Reading files ...';
 my $templates = readAllTemplates $config->{template};
 if ($args{d} || $args{debug}) {
-	foreach (keys $templates) {
+	foreach (keys %$templates) {
 		nfo "=========== $_ ============";
 		nfo $templates->{$_};
 	}
