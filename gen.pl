@@ -13,6 +13,7 @@ sub nfo($) {
 }
 
 my $ERROR;
+
 sub nag($) {
 	my ($str) = @_;
 	$ERROR = 1;
@@ -145,11 +146,12 @@ sub readTemplate($) {
 
 sub readAllTemplates($) {
 	my ($all) = @_;
-	my @result;
-	foreach my $tpl (@$all) {
-		push @result, readTemplate $tpl;
+	my %result;
+	foreach my $alias (keys %$all) {
+		my $tpl = $all->{$alias};
+		$result{$alias} = readTemplate $tpl;
 	}
-	return \@result;
+	return \%result;
 }
 
 sub readConfig() {
@@ -163,7 +165,7 @@ my %_usedFiles;
 sub _setOutputFile {
 	my ($file) = @_;
 	if ($_currentFH) {
-		nfo "OK";
+		nfo 'OK';
 		_writeToFile('#'.('=' x 50))
 			if $args{s} || $args{separator};
 		close $_currentFH;
@@ -204,6 +206,7 @@ sub processTeplate {
 		my @lines = split /[\n\r]+/, $tpl;
 		my @lnums = $@ =~ /line (\d+)/g;
 		nag '*' x 50;
+
 		foreach (@lnums) {
 			nag $lines[ $_ - 1 ];
 		}
@@ -211,8 +214,9 @@ sub processTeplate {
 	};
 }
 
-my @excellNames = qw(old main vlan ips rsvp);
-my $cmd         = Eldhelm::Util::CommandLine->new(
+my @excellNames   = qw(old main vlan ips rsvp);
+my @templateNames = qw(vsi iface);
+my $cmd           = Eldhelm::Util::CommandLine->new(
 	argv    => \@ARGV,
 	items   => ['folder to process'],
 	options => [
@@ -222,7 +226,8 @@ my $cmd         = Eldhelm::Util::CommandLine->new(
 		[ 'd debug',     'prints compiled template' ],
 		[ 's separator', 'appends a separator before file close' ],
 		[ 'p process',   'folder to process' ],
-		[ join(' ', @excellNames), 'load a file from a specific location' ],
+		[ join(' ', @excellNames),   'load a file from a specific location' ],
+		[ join(' ', @templateNames), 'templates to be processed' ],
 	],
 	examples => [ "perl $0 -p xls", "perl $0 xls" ]
 );
@@ -265,14 +270,15 @@ foreach my $e (@excellNames) {
 nfo 'Reading files ...';
 my $templates = readAllTemplates $config->{template};
 if ($args{d} || $args{debug}) {
-	nfo $_ foreach @$templates;
+	foreach (keys $templates) {
+		nfo "=========== $_ ============";
+		nfo $templates->{$_};
+	}
 	exit;
 }
 my $excell = readAllExcells $config->{excell};
 
-nfo 'Processing ...';
-my $tpl = $templates->[0];
-
+nfo 'Analyzing ...';
 my %newServices;
 foreach my $row (@{ $excell->{main}{rows} }) {
 	my $dn = $row->{'OLD device name'};
@@ -298,11 +304,11 @@ foreach my $row (@{ $excell->{rsvp}{rows} }) {
 
 my @errors;
 my %uniqueServices;
+my @allServices;
 foreach my $row (@{ $excell->{old}{rows} }) {
 	next unless keys %$row;
 	my $k      = $row->{devicename}.'-'.$row->{portname};
 	my $newRow = $newServices{$k};
-	my $nk     = $newRow->{'NEW device name'}.'-'.$row->{VLAN};
 
 	$k = $row->{VLAN};
 	unless ($k) {
@@ -328,17 +334,41 @@ foreach my $row (@{ $excell->{old}{rows} }) {
 		next;
 	}
 
-	$uniqueServices{$nk} = { %$row, %$newRow, %$vlanRows, %$ipRows, %$rsvpRows };
-}
-
-foreach (sort { $a cmp $b } keys %uniqueServices) {
-	my $row = $uniqueServices{$_};
-	if ($row->{'QoS marking'} eq 'not migrate') {
+	my $tplEnv = { %$row, %$newRow, %$vlanRows, %$ipRows, %$rsvpRows };
+	if ($tplEnv->{'QoS marking'} eq 'not migrate') {
 		nfo "QoS marking = not migrate, skipping $row->{devicename} $row->{portname}";
 		next;
 	}
-	processTeplate($tpl, $row);
+
+	push @allServices, $tplEnv;
+
+	my $nk = $newRow->{'NEW device name'}.'-'.$row->{VLAN};
+	$uniqueServices{$nk} = $tplEnv;
 }
 
-nag $_ foreach @errors;
+if (@errors) {
+	nag 'Some errors were found:';
+	nag $_ foreach @errors;
+	nag '';
+}
+
+
+my $processAllTemplates = !grep $args{$_}, @templateNames;
+
+if ($processAllTemplates || $args{vsi}) {
+	nfo 'Processing vsi...';
+	foreach (sort { $a cmp $b } keys %uniqueServices) {
+		processTeplate($templates->{vsi}, $uniqueServices{$_});
+	}
+	nfo '';
+}
+
+if ($processAllTemplates || $args{iface}) {
+	nfo 'Procesing iface...';
+	foreach (@allServices) {
+		processTeplate($templates->{iface}, $_);
+	}
+	nfo '';
+}
+
 done;
