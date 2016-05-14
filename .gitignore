@@ -1,9 +1,11 @@
 perl/
 xls/
 output/
+tpl/
 *.xls
 *.xlsx
 *.cfg
 *.bak
 *.log
 *.zip
+*.txt

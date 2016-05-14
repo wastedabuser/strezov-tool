@@ -6,5 +6,8 @@
 		ips  => 'IP_plan.xlsx',
 		rsvp => 'RSVP_plan.xlsx',
 	},
-	template => ['tpl/VSI_templates.txt']
+	template => [
+		'tpl/VSI_templates.txt', 
+		'tpl/interface_templates.txt',
+	],
 }

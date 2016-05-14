@@ -185,6 +185,14 @@ sub _writeToFile {
 	print $_currentFH "$content\n";
 }
 
+sub isin($@) {
+	my ($var, @list) = @_;
+	foreach (@list) {
+		return 1 if $_ eq $var;
+	}
+	return;
+}
+
 sub processTeplate {
 	my ($tpl, $_parsedData) = @_;
 	eval $tpl or do {
