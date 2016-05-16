@@ -303,23 +303,17 @@ foreach my $row (@{ $excell->{rsvp}{rows} }) {
 }
 
 my @errors;
-my %uniqueServices;
 my @allServices;
+my %uniqueServices;
 foreach my $row (@{ $excell->{old}{rows} }) {
 	next unless keys %$row;
+	if ($row->{'QoS marking'} eq 'not migrate') {
+		nfo "QoS marking = not migrate, skipping $row->{devicename} $row->{portname}";
+		next;
+	}
+
 	my $k      = $row->{devicename}.'-'.$row->{portname};
 	my $newRow = $newServices{$k};
-
-	$k = $row->{VLAN};
-	unless ($k) {
-		push @errors, "Vlan is blank for $row->{devicename} $row->{portname}!";
-		next;
-	}
-	my $vlanRows = $vlans{$k};
-	unless ($vlanRows) {
-		push @errors, "Vlan $k not found for $row->{devicename} $row->{portname}!";
-		next;
-	}
 
 	$k = $newRow->{'NEW device name'};
 	my $ipRows = $ips{$k};
@@ -334,16 +328,23 @@ foreach my $row (@{ $excell->{old}{rows} }) {
 		next;
 	}
 
-	my $tplEnv = { %$row, %$newRow, %$vlanRows, %$ipRows, %$rsvpRows };
-	if ($tplEnv->{'QoS marking'} eq 'not migrate') {
-		nfo "QoS marking = not migrate, skipping $row->{devicename} $row->{portname}";
+	my %tplEnv = (%$row, %$newRow, %$ipRows, %$rsvpRows);
+	push @allServices, \%tplEnv;
+
+	$k = $row->{VLAN};
+	unless ($k) {
+		push @errors, "Vlan is blank for $row->{devicename} $row->{portname}!";
+		next;
+	}
+	my $vlanRows = $vlans{$k};
+	unless ($vlanRows) {
+		push @errors, "Vlan $k not found for $row->{devicename} $row->{portname}!";
 		next;
 	}
 
-	push @allServices, $tplEnv;
-
+	%tplEnv = (%tplEnv, %$vlanRows);
 	my $nk = $newRow->{'NEW device name'}.'-'.$row->{VLAN};
-	$uniqueServices{$nk} = $tplEnv;
+	$uniqueServices{$nk} = \%tplEnv;
 }
 
 if (@errors) {
@@ -351,7 +352,6 @@ if (@errors) {
 	nag $_ foreach @errors;
 	nag '';
 }
-
 
 my $processAllTemplates = !grep $args{$_}, @templateNames;
 
