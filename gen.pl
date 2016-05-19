@@ -135,6 +135,7 @@ sub readTemplate($) {
 	$txt =~ s/^[\t\s]*#append to (.*)/"_setOutputFile(qq~$1~);"/gme;
 	$txt =~ s/^[\t\s]*#if[\s\t]+(.*)/parseCondition($1)/igme;
 	$txt =~ s/^[\t\s]*#endif/\}/igm;
+	$txt =~ s/^[\t\s]*#abort/abortProcessing();/igm;
 	$txt =~ s/^[\t\s]*(#.*)/"_writeToFile(qq~$1~);"/gme;
 	$txt =~ s/\$(\w+)/"\$_parsedData->{'$1'}"/ge;
 	$txt =~ s/\$\{([^\{\}]+)\}/"\$_parsedData->{'$1'}"/ge;
@@ -198,20 +199,29 @@ sub isin($@) {
 sub processTeplate {
 	my ($tpl, $_parsedData) = @_;
 	eval $tpl or do {
-		my $i = 0;
-		$tpl =~ s/^/$i++; " $i. "/gme;
-		nag $tpl;
-		nag '*' x 50;
-		nag $@;
-		my @lines = split /[\n\r]+/, $tpl;
-		my @lnums = $@ =~ /line (\d+)/g;
-		nag '*' x 50;
+		if ($@ =~ '---abort---') {
+			nfo 'Template aborted';
+		} else {
+			my $i = 0;
+			$tpl =~ s/^/$i++; " $i. "/gme;
+			nag $tpl;
+			nag '*' x 50;
+			nag $@;
+			my @lines = split /[\n\r]+/, $tpl;
+			my @lnums = $@ =~ /line (\d+)/g;
+			nag '*' x 50;
 
-		foreach (@lnums) {
-			nag $lines[ $_ - 1 ];
+			foreach (@lnums) {
+				nag $lines[ $_ - 1 ];
+			}
+			done;
 		}
-		done;
 	};
+}
+
+sub abortProcessing {
+	_setOutputFile();
+	die '---abort---';
 }
 
 my @excellNames   = qw(old main vlan ips rsvp);
