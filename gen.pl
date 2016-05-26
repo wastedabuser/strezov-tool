@@ -135,7 +135,7 @@ sub readTemplate($) {
 	$txt =~ s/^[\t\s]*#append to (.*)/"_setOutputFile(qq~$1~);"/gme;
 	$txt =~ s/^[\t\s]*#if[\s\t]+(.*)/parseCondition($1)/igme;
 	$txt =~ s/^[\t\s]*#endif/\}/igm;
-	$txt =~ s/^[\t\s]*#abort/abortProcessing();/igm;
+	$txt =~ s/^[\t\s]*#abort(.*)/abortProcessing(qq~$1~);/igm;
 	$txt =~ s/^[\t\s]*(#.*)/"_writeToFile(qq~$1~);"/gme;
 	$txt =~ s/\$(\w+)/"\$_parsedData->{'$1'}"/ge;
 	$txt =~ s/\$\{([^\{\}]+)\}/"\$_parsedData->{'$1'}"/ge;
@@ -220,7 +220,9 @@ sub processTeplate {
 }
 
 sub abortProcessing {
+	my ($message) = @_;
 	_setOutputFile();
+	nfo "Aborting template:$message" if $message;
 	die '---abort---';
 }
 
@@ -342,18 +344,12 @@ foreach my $row (@{ $excell->{old}{rows} }) {
 	push @allServices, \%tplEnv;
 
 	$k = $row->{VLAN};
-	unless ($k) {
-		push @errors, "Vlan is blank for $row->{devicename} $row->{portname}!";
-		next;
-	}
-	my $vlanRows = $vlans{$k};
-	unless ($vlanRows) {
-		push @errors, "Vlan $k not found for $row->{devicename} $row->{portname}!";
-		next;
+	if ($k) {
+		my $vlanRows = $vlans{$k};
+		%tplEnv = (%tplEnv, %$vlanRows) if $vlanRows;
 	}
 
-	%tplEnv = (%tplEnv, %$vlanRows);
-	my $nk = $newRow->{'NEW device name'}.'-'.$row->{VLAN};
+	my $nk = $newRow->{'NEW device name'}.'-'.($row->{VLAN} || '');
 	$uniqueServices{$nk} = \%tplEnv;
 }
 
